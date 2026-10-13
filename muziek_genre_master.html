@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Muziek Genre Master</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Roboto:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #1a202c;
+            color: white;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+
+        .pixel-font {
+            font-family: 'Press Start 2P', cursive;
+        }
+
+        /* Custom Animations */
+        @keyframes pulse-energy {
+            0% { transform: scale(1); box-shadow: 0 0 10px #fbbf24; }
+            50% { transform: scale(1.05); box-shadow: 0 0 20px #fbbf24, 0 0 30px #f59e0b; }
+            100% { transform: scale(1); box-shadow: 0 0 10px #fbbf24; }
+        }
+
+        .energy-pulse {
+            animation: pulse-energy 1.5s infinite;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+
+        .floating {
+            animation: float 3s ease-in-out infinite;
+        }
+
+        /* Game Canvas Styling */
+        #minigame-canvas {
+            display: none;
+            background: linear-gradient(to bottom, #4f46e5, #9333ea);
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            max-width: 100%;
+            border: 4px solid #fff;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #2d3748;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4a5568;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #718096;
+        }
+
+        .screen {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            width: 100vw;
+            position: absolute;
+            top: 0;
+            left: 0;
+            padding: 1rem;
+            box-sizing: border-box;
+        }
+
+        .screen.active {
+            display: flex;
+        }
+
+        .btn {
+            transition: all 0.2s;
+        }
+        .btn:hover:not(:disabled) {
+            transform: scale(1.05);
+            filter: brightness(1.2);
+        }
+        .btn:active:not(:disabled) {
+            transform: scale(0.95);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Note particles for correct answers */
+        .note-particle {
+            position: absolute;
+            font-size: 24px;
+            pointer-events: none;
+            animation: floatUp 1.5s ease-out forwards;
+        }
+
+        @keyframes floatUp {
+            0% { opacity: 1; transform: translateY(0) scale(1) rotate(0deg); }
+            100% { opacity: 0; transform: translateY(-100px) scale(1.5) rotate(45deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top HUD (Heads Up Display) -->
+    <div id="hud" class="fixed top-0 left-0 w-full p-4 flex justify-between items-center z-50 bg-gray-900 bg-opacity-80 backdrop-blur-sm border-b border-gray-700 hidden">
+        <div class="flex items-center space-x-2">
+            <span class="text-3xl">⚡</span>
+            <span class="pixel-font text-yellow-400 text-xl" id="energy-display">0</span>
+        </div>
+        <button id="nav-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-full shadow-lg btn">
+            Naar Minigame
+        </button>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="screen-start" class="screen active bg-gradient-to-br from-indigo-900 to-purple-900">
+        <h1 class="pixel-font text-4xl md:text-6xl text-center text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 mb-8 floating text-white">Muziek Genre Master</h1>
+        <p class="text-lg md:text-xl text-gray-300 mb-8 text-center max-w-2xl">
+            Luister naar de geluiden, raad het genre, en verdien energie ⚡ om de minigame te spelen!
+        </p>
+        <button id="btn-start" class="bg-gradient-to-r from-green-400 to-blue-500 text-white font-bold py-4 px-8 rounded-full text-2xl shadow-xl btn pulse-energy">
+            Start het Spel!
+        </button>
+        <p class="text-sm text-gray-400 mt-4">(Zet je geluid aan!)</p>
+    </div>
+
+    <!-- Quiz Screen -->
+    <div id="screen-quiz" class="screen bg-gradient-to-br from-gray-900 to-blue-900">
+        <div class="w-full max-w-3xl bg-gray-800 rounded-2xl p-6 md:p-8 shadow-2xl mt-16">
+            
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-cyan-300">Raad het Genre!</h2>
+                <div class="text-gray-400 font-mono">Vraag: <span id="question-count">1/10</span></div>
+            </div>
+
+            <div class="flex flex-col items-center mb-8">
+                <div id="play-sound-container" class="w-32 h-32 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-500 flex items-center justify-center cursor-pointer shadow-lg hover:shadow-cyan-500/50 transition-all transform hover:scale-105 mb-4 group">
+                    <span id="play-icon" class="text-5xl group-hover:text-white transition-colors">▶️</span>
+                </div>
+                <p class="text-gray-300" id="listen-text">Klik om te luisteren</p>
+            </div>
+
+            <div id="options-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Options will be generated here -->
+            </div>
+
+            <div id="feedback-message" class="mt-6 text-center text-xl font-bold h-8 hidden opacity-0 transition-opacity duration-300">
+                <!-- Feedback text -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Minigame Screen -->
+    <div id="screen-minigame" class="screen bg-gray-900">
+        <div class="mt-16 w-full flex flex-col items-center">
+            <h2 class="pixel-font text-2xl text-yellow-400 mb-4">Muziek Ritme Run</h2>
+            
+            <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 w-full max-w-2xl mb-4 flex justify-between items-center">
+                <div>
+                    <span class="text-gray-400">Kosten:</span> 
+                    <span class="text-yellow-400 font-bold ml-2">⚡ 30 Energie</span>
+                </div>
+                <button id="btn-play-minigame" class="bg-green-500 hover:bg-green-400 text-white font-bold py-2 px-6 rounded-lg shadow btn disabled:opacity-50 disabled:cursor-not-allowed">
+                    Speel!
+                </button>
+            </div>
+
+            <div id="game-container" class="relative w-full max-w-2xl">
+                <!-- Overlay before playing -->
+                <div id="game-overlay" class="absolute inset-0 bg-black bg-opacity-75 flex flex-col items-center justify-center rounded-xl z-10">
+                    <p class="text-white text-xl mb-4 text-center px-4" id="overlay-text">Verzamel 30 energie in de quiz om te spelen!</p>
+                </div>
+                
+                <canvas id="minigame-canvas" width="600" height="400" class="mx-auto block"></canvas>
+                
+                <!-- Game UI Overlay -->
+                <div id="game-ui" class="absolute top-2 right-2 text-white font-mono text-xl hidden z-20">
+                    Score: <span id="game-score">0</span>
+                </div>
+            </div>
+            
+            <div class="mt-4 text-gray-400 text-center max-w-md hidden" id="game-instructions">
+                Tik of klik op het canvas om te springen. <br>
+                Ontwijk de rode blokken, pak de groene noten!
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- State Management ---
+        const gameState = {
+            energy: 0,
+            currentScreen: 'start', // 'start', 'quiz', 'minigame'
+            quiz: {
+                currentQuestionIndex: 0,
+                questions: [],
+                isPlaying: false,
+                answered: false
+            },
+            minigame: {
+                cost: 30,
+                isPlaying: false,
+                score: 0,
+                animationId: null
+            }
+        };
+
+        // --- DOM Elements ---
+        const screens = {
+            start: document.getElementById('screen-start'),
+            quiz: document.getElementById('screen-quiz'),
+            minigame: document.getElementById('screen-minigame')
+        };
+        
+        const hud = document.getElementById('hud');
+        const energyDisplay = document.getElementById('energy-display');
+        const navBtn = document.getElementById('nav-btn');
+        const btnStart = document.getElementById('btn-start');
+
+        // Quiz elements
+        const playSoundBtn = document.getElementById('play-sound-container');
+        const playIcon = document.getElementById('play-icon');
+        const optionsContainer = document.getElementById('options-container');
+        const feedbackMessage = document.getElementById('feedback-message');
+        const questionCount = document.getElementById('question-count');
+
+        // Minigame elements
+        const btnPlayMinigame = document.getElementById('btn-play-minigame');
+        const canvas = document.getElementById('minigame-canvas');
+        const ctx = canvas.getContext('2d');
+        const gameOverlay = document.getElementById('game-overlay');
+        const overlayText = document.getElementById('overlay-text');
+        const gameUi = document.getElementById('game-ui');
+        const gameScoreDisplay = document.getElementById('game-score');
+        const gameInstructions = document.getElementById('game-instructions');
+
+        // --- Tone.js Synthesizers and Sounds ---
+        let isToneInitialized = false;
+        
+        // Polyphonic synth for chords
+        const polySynth = new Tone.PolySynth(Tone.Synth).toDestination();
+        polySynth.volume.value = -10;
+        
+        // Monophonic synth for bass
+        const bassSynth = new Tone.FMSynth({
+            harmonicity: 1,
+            modulationIndex: 3.5,
+            oscillator: { type: "square" },
+            envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.1 }
+        }).toDestination();
+        bassSynth.volume.value = -5;
+
+        // Drum machine basic (using NoiseSynth for snare/hihat, MembraneSynth for kick)
+        const kick = new Tone.MembraneSynth().toDestination();
+        kick.volume.value = -5;
+        
+        const snare = new Tone.NoiseSynth({
+            noise: { type: 'white' },
+            envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.1 }
+        }).toDestination();
+        snare.volume.value = -10;
+
+        const hihat = new Tone.MetalSynth({
+            frequency: 200,
+            envelope: { attack: 0.001, decay: 0.1, release: 0.01 },
+            harmonicity: 5.1,
+            modulationIndex: 32,
+            resonance: 4000,
+            octaves: 1.5
+        }).toDestination();
+        hihat.volume.value = -15;
+
+        // Genre Generators
+        const genreGenerators = {
+            'Techno': () => {
+                Tone.Transport.bpm.value = 135;
+                const loop = new Tone.Loop(time => {
+                    kick.triggerAttackRelease("C1", "8n", time);
+                    if (Math.random() > 0.5) hihat.triggerAttackRelease("16n", time + Tone.Time("16n").toSeconds());
+                    if (Math.random() > 0.8) snare.triggerAttackRelease("16n", time + Tone.Time("8n").toSeconds());
+                }, "4n");
+                
+                const bassLoop = new Tone.Loop(time => {
+                    if (Math.random() > 0.3) bassSynth.triggerAttackRelease("C2", "16n", time + Tone.Time("16n").toSeconds());
+                }, "8n");
+                
+                return [loop, bassLoop];
+            },
+            'Klassiek': () => {
+                Tone.Transport.bpm.value = 90;
+                const seq = new Tone.Sequence((time, note) => {
+                    polySynth.triggerAttackRelease(note, "8n", time);
+                }, [["C4", "E4", "G4"], null, ["G3", "B3", "D4"], null, ["A3", "C4", "E4"], ["F3", "A3", "C4"]], "2n");
+                return [seq];
+            },
+            'Rock': () => {
+                Tone.Transport.bpm.value = 110;
+                const drumLoop = new Tone.Loop(time => {
+                    kick.triggerAttackRelease("C1", "8n", time);
+                    snare.triggerAttackRelease("8n", time + Tone.Time("4n").toSeconds());
+                    hihat.triggerAttackRelease("16n", time);
+                    hihat.triggerAttackRelease("16n", time + Tone.Time("8n").toSeconds());
+                    hihat.triggerAttackRelease("16n", time + Tone.Time("4n").toSeconds());
+                    hihat.triggerAttackRelease("16n", time + Tone.Time("4n").toSeconds() + Tone.Time("8n").toSeconds());
+                }, "2n");
+                
+                const bassLoop = new Tone.Sequence((time, note) => {
+                    bassSynth.triggerAttackRelease(note, "8n", time);
+                }, ["E2", "E2", "E2", "E2", "A2", "A2", "G2", "E2"], "8n");
+                
+                return [drumLoop, bassLoop];
+            },
+            'Jazz': () => {
+                Tone.Transport.bpm.value = 120;
+                const swingPattern = new Tone.Sequence((time, note) => {
+                    hihat.triggerAttackRelease("32n", time);
+                    if(note === "swing") hihat.triggerAttackRelease("32n", time + Tone.Time("8t").toSeconds() * 2);
+                }, ["hit", null, "swing", null], "8n");
+                
+                const bassLine = new Tone.Sequence((time, note) => {
+                    bassSynth.triggerAttackRelease(note, "4n", time);
+                }, ["C2", "E2", "G2", "Bb2", "F2", "A2", "C3", "Eb3"], "4n");
+
+                return [swingPattern, bassLine];
+            },
+            'Reggae': () => {
+                Tone.Transport.bpm.value = 85;
+                const skank = new Tone.Loop(time => {
+                    // Play chords on the off-beat
+                    polySynth.triggerAttackRelease(["C4", "E4", "G4"], "8n", time + Tone.Time("8n").toSeconds());
+                }, "4n");
+
+                const bass = new Tone.Loop(time => {
+                    bassSynth.triggerAttackRelease("C2", "4n", time);
+                    bassSynth.triggerAttackRelease("G1", "4n", time + Tone.Time("2n").toSeconds());
+                }, "1m");
+
+                const drums = new Tone.Loop(time => {
+                    // One drop
+                    kick.triggerAttackRelease("C1", "8n", time + Tone.Time("2n").toSeconds());
+                    snare.triggerAttackRelease("8n", time + Tone.Time("2n").toSeconds());
+                }, "1m");
+
+                return [skank, bass, drums];
+            }
+        };
+
+        const allGenres = Object.keys(genreGenerators);
+
+        function generateQuiz() {
+            gameState.quiz.questions = [];
+            for (let i = 0; i < 5; i++) { // 5 questions per round
+                // Select a random correct genre
+                const correctGenre = allGenres[Math.floor(Math.random() * allGenres.length)];
+                
+                // Select 3 random incorrect genres
+                let incorrectGenres = allGenres.filter(g => g !== correctGenre);
+                incorrectGenres = incorrectGenres.sort(() => 0.5 - Math.random()).slice(0, 3);
+                
+                // Combine and shuffle options
+                let options = [correctGenre, ...incorrectGenres];
+                options = options.sort(() => 0.5 - Math.random());
+                
+                gameState.quiz.questions.push({
+                    correct: correctGenre,
+                    options: options
+                });
+            }
+            gameState.quiz.currentQuestionIndex = 0;
+        }
+
+        // --- Core Functions ---
+
+        function switchScreen(screenName) {
+            // Stop any playing audio
+            Tone.Transport.stop();
+            Tone.Transport.cancel(0);
+            if(gameState.quiz.isPlaying) stopSound();
+            if(gameState.minigame.isPlaying) stopMinigame();
+
+            // Hide all screens
+            Object.values(screens).forEach(s => s.classList.remove('active'));
+            
+            // Show target screen
+            screens[screenName].classList.add('active');
+            gameState.currentScreen = screenName;
+
+            // Handle HUD visibility and Navigation button text
+            if (screenName === 'start') {
+                hud.classList.add('hidden');
+            } else {
+                hud.classList.remove('hidden');
+                if (screenName === 'quiz') {
+                    navBtn.innerText = 'Naar Minigame';
+                    navBtn.onclick = () => switchScreen('minigame');
+                    loadQuestion();
+                } else if (screenName === 'minigame') {
+                    navBtn.innerText = 'Terug naar Quiz';
+                    navBtn.onclick = () => switchScreen('quiz');
+                    checkMinigamePlayability();
+                }
+            }
+            updateEnergyDisplay();
+        }
+
+        function updateEnergyDisplay() {
+            energyDisplay.innerText = gameState.energy;
+            
+            // Highlight effect if energy changes
+            energyDisplay.parentElement.classList.add('energy-pulse');
+            setTimeout(() => {
+                energyDisplay.parentElement.classList.remove('energy-pulse');
+            }, 500);
+
+            if(gameState.currentScreen === 'minigame') {
+                checkMinigamePlayability();
+            }
+        }
+
+        let currentLoops = [];
+
+        async function initTone() {
+            if (!isToneInitialized) {
+                await Tone.start();
+                isToneInitialized = true;
+            }
+        }
+
+        async function toggleSound() {
+            if (gameState.quiz.answered) return; // Don't play if already answered
+            
+            await initTone();
+
+            if (gameState.quiz.isPlaying) {
+                stopSound();
+            } else {
+                playSound();
+            }
+        }
+
+        function playSound() {
+            const currentQ = gameState.quiz.questions[gameState.quiz.currentQuestionIndex];
+            const generateFunc = genreGenerators[currentQ.correct];
+            
+            // Stop previous
+            Tone.Transport.stop();
+            Tone.Transport.cancel(0);
+            currentLoops.forEach(loop => loop.dispose());
+            currentLoops = [];
+
+            // Generate new
+            currentLoops = generateFunc();
+            currentLoops.forEach(loop => loop.start(0));
+            
+            Tone.Transport.start();
+            
+            gameState.quiz.isPlaying = true;
+            playIcon.innerText = '⏸️';
+            playSoundBtn.classList.add('animate-pulse');
+            document.getElementById('listen-text').innerText = 'Geluid speelt... (Raad het genre!)';
+        }
+
+        function stopSound() {
+            Tone.Transport.stop();
+            gameState.quiz.isPlaying = false;
+            playIcon.innerText = '▶️';
+            playSoundBtn.classList.remove('animate-pulse');
+            if(!gameState.quiz.answered) {
+                document.getElementById('listen-text').innerText = 'Klik om te luisteren';
+            }
+        }
+
+        function loadQuestion() {
+            if (gameState.quiz.currentQuestionIndex >= gameState.quiz.questions.length) {
+                // Generate new batch if finished
+                generateQuiz();
+            }
+
+            const q = gameState.quiz.questions[gameState.quiz.currentQuestionIndex];
+            gameState.quiz.answered = false;
+            
+            questionCount.innerText = `${gameState.quiz.currentQuestionIndex + 1}/${gameState.quiz.questions.length}`;
+            feedbackMessage.classList.add('hidden');
+            feedbackMessage.classList.remove('opacity-100');
+            
+            stopSound();
+            document.getElementById('listen-text').innerText = 'Klik om te luisteren';
+
+            // Render options
+            optionsContainer.innerHTML = '';
+            q.options.forEach(option => {
+                const btn = document.createElement('button');
+                btn.className = 'bg-gray-700 hover:bg-gray-600 text-white font-bold py-4 px-6 rounded-xl border border-gray-600 shadow-md transition-all btn text-lg';
+                btn.innerText = option;
+                btn.onclick = () => checkAnswer(option, btn);
+                optionsContainer.appendChild(btn);
+            });
+        }
+
+        function checkAnswer(selectedGenre, btnElement) {
+            if (gameState.quiz.answered) return;
+            
+            gameState.quiz.answered = true;
+            stopSound();
+            document.getElementById('listen-text').innerText = 'Beoordelen...';
+
+            const correctGenre = gameState.quiz.questions[gameState.quiz.currentQuestionIndex].correct;
+            const buttons = optionsContainer.querySelectorAll('button');
+            
+            // Disable all buttons
+            buttons.forEach(b => {
+                b.disabled = true;
+                b.classList.remove('hover:bg-gray-600');
+            });
+
+            feedbackMessage.classList.remove('hidden');
+            
+            // Trigger reflow to ensure transition works
+            void feedbackMessage.offsetWidth;
+            feedbackMessage.classList.add('opacity-100');
+
+            if (selectedGenre === correctGenre) {
+                // Correct
+                btnElement.classList.replace('bg-gray-700', 'bg-green-600');
+                btnElement.classList.replace('border-gray-600', 'border-green-500');
+                
+                feedbackMessage.innerText = 'Goed gedaan! +10 Energie ⚡';
+                feedbackMessage.className = 'mt-6 text-center text-xl font-bold h-8 text-green-400 opacity-100 transition-opacity duration-300';
+                
+                gameState.energy += 10;
+                updateEnergyDisplay();
+                createParticles(btnElement);
+                
+                // Play success sound (simple beep)
+                polySynth.triggerAttackRelease(["C5", "E5", "G5"], "8n");
+
+            } else {
+                // Incorrect
+                btnElement.classList.replace('bg-gray-700', 'bg-red-600');
+                btnElement.classList.replace('border-gray-600', 'border-red-500');
+                
+                // Highlight correct one
+                buttons.forEach(b => {
+                    if (b.innerText === correctGenre) {
+                        b.classList.replace('bg-gray-700', 'bg-green-600');
+                        b.classList.replace('border-gray-600', 'border-green-500');
+                    }
+                });
+
+                feedbackMessage.innerText = `Fout! Het was ${correctGenre}.`;
+                feedbackMessage.className = 'mt-6 text-center text-xl font-bold h-8 text-red-400 opacity-100 transition-opacity duration-300';
+                
+                // Play error sound
+                bassSynth.triggerAttackRelease("C2", "8n");
+            }
+
+            // Next question after delay
+            setTimeout(() => {
+                gameState.quiz.currentQuestionIndex++;
+                loadQuestion();
+            }, 2000);
+        }
+
+        function createParticles(element) {
+            const rect = element.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+
+            for (let i = 0; i < 5; i++) {
+                const particle = document.createElement('div');
+                particle.innerHTML = '🎵';
+                particle.className = 'note-particle';
+                particle.style.left = `${centerX + (Math.random() * 40 - 20)}px`;
+                particle.style.top = `${centerY + (Math.random() * 20 - 10)}px`;
+                document.body.appendChild(particle);
+
+                setTimeout(() => {
+                    particle.remove();
+                }, 1500);
+            }
+        }
+
+        // --- Minigame Logic ---
+
+        function checkMinigamePlayability() {
+            if (gameState.energy >= gameState.minigame.cost) {
+                btnPlayMinigame.disabled = false;
+                overlayText.innerText = "Klaar om te spelen!";
+                overlayText.className = "text-green-400 text-2xl font-bold mb-4 text-center px-4 pixel-font";
+            } else {
+                btnPlayMinigame.disabled = true;
+                const needed = gameState.minigame.cost - gameState.energy;
+                overlayText.innerText = `Niet genoeg energie.\nVerzamel nog ${needed} ⚡ in de quiz!`;
+                overlayText.className = "text-red-400 text-xl mb-4 text-center px-4 font-bold";
+            }
+        }
+
+        // Game objects
+        const player = {
+            x: 50, y: 0, width: 30, height: 30,
+            velocityY: 0, gravity: 0.6, jumpPower: -10,
+            isJumping: false, color: '#fbbf24' // Yellow
+        };
+        
+        let obstacles = [];
+        let collectibles = [];
+        let gameSpeed = 4;
+        let frameCount = 0;
+
+        // Resize canvas to fit container on load
+        function resizeCanvas() {
+            const container = document.getElementById('game-container');
+            const targetWidth = Math.min(container.clientWidth, 600);
+            // Maintain 3:2 aspect ratio
+            const targetHeight = (targetWidth / 3) * 2; 
+            
+            canvas.style.width = targetWidth + 'px';
+            canvas.style.height = targetHeight + 'px';
+            
+            // Set internal resolution
+            canvas.width = 600;
+            canvas.height = 400;
+            
+            player.y = canvas.height - player.height;
+        }
+
+        function startMinigame() {
+            if (gameState.energy < gameState.minigame.cost) return;
+            
+            // Deduct energy
+            gameState.energy -= gameState.minigame.cost;
+            updateEnergyDisplay();
+
+            // Init game state
+            gameState.minigame.isPlaying = true;
+            gameState.minigame.score = 0;
+            gameScoreDisplay.innerText = 0;
+            obstacles = [];
+            collectibles = [];
+            gameSpeed = 4;
+            frameCount = 0;
+            player.y = canvas.height - player.height;
+            player.velocityY = 0;
+
+            // UI updates
+            gameOverlay.style.display = 'none';
+            gameUi.style.display = 'block';
+            gameInstructions.style.display = 'block';
+            canvas.style.display = 'block';
+            btnPlayMinigame.style.display = 'none';
+
+            // Start Audio beat
+            initTone().then(() => {
+                Tone.Transport.bpm.value = 140;
+                const beat = new Tone.Loop(time => {
+                    kick.triggerAttackRelease("C1", "8n", time);
+                    if(frameCount % 120 < 60) {
+                        hihat.triggerAttackRelease("16n", time + 0.1);
+                    }
+                }, "4n");
+                currentLoops = [beat];
+                beat.start(0);
+                Tone.Transport.start();
+            });
+
+            // Start loop
+            gameLoop();
+        }
+
+        function stopMinigame(crashed = false) {
+            gameState.minigame.isPlaying = false;
+            cancelAnimationFrame(gameState.minigame.animationId);
+            
+            Tone.Transport.stop();
+            currentLoops.forEach(l => l.dispose());
+            currentLoops = [];
+
+            gameOverlay.style.display = 'flex';
+            canvas.style.display = 'none';
+            btnPlayMinigame.style.display = 'block';
+            gameUi.style.display = 'none';
+            gameInstructions.style.display = 'none';
+
+            if (crashed) {
+                overlayText.innerHTML = `Game Over!<br><span class="text-white text-lg">Score: ${gameState.minigame.score}</span><br>Probeer het nog eens!`;
+                overlayText.className = "text-red-500 text-3xl font-bold mb-4 text-center px-4 pixel-font";
+                bassSynth.triggerAttackRelease("C1", "2n"); // Crash sound
+            }
+            
+            checkMinigamePlayability();
+        }
+
+        function gameLoop() {
+            if (!gameState.minigame.isPlaying) return;
+            
+            updateGame();
+            drawGame();
+            
+            gameState.minigame.animationId = requestAnimationFrame(gameLoop);
+        }
+
+        function updateGame() {
+            frameCount++;
+            
+            // Player Physics
+            player.velocityY += player.gravity;
+            player.y += player.velocityY;
+            
+            // Floor collision
+            if (player.y >= canvas.height - player.height) {
+                player.y = canvas.height - player.height;
+                player.velocityY = 0;
+                player.isJumping = false;
+            }
+
+            // Generate Obstacles (Red blocks)
+            if (frameCount % 100 === 0) {
+                const height = 30 + Math.random() * 40;
+                obstacles.push({
+                    x: canvas.width,
+                    y: canvas.height - height,
+                    width: 20 + Math.random() * 20,
+                    height: height,
+                    color: '#ef4444' // Red
+                });
+            }
+
+            // Generate Collectibles (Green notes)
+            if (frameCount % 75 === 0 && Math.random() > 0.3) {
+                collectibles.push({
+                    x: canvas.width,
+                    y: canvas.height - 100 - Math.random() * 100, // floating in air
+                    width: 20,
+                    height: 20,
+                    color: '#10b981', // Green
+                    collected: false
+                });
+            }
+
+            // Update Obstacles & Collision
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i];
+                obs.x -= gameSpeed;
+
+                // Collision detection (AABB)
+                if (player.x < obs.x + obs.width &&
+                    player.x + player.width > obs.x &&
+                    player.y < obs.y + obs.height &&
+                    player.y + player.height > obs.y) {
+                    // CRASH!
+                    stopMinigame(true);
+                    return;
+                }
+
+                // Remove off-screen
+                if (obs.x + obs.width < 0) {
+                    obstacles.splice(i, 1);
+                    gameState.minigame.score += 5; // Points for surviving
+                    gameScoreDisplay.innerText = gameState.minigame.score;
+                }
+            }
+
+            // Update Collectibles
+            for (let i = collectibles.length - 1; i >= 0; i--) {
+                let col = collectibles[i];
+                col.x -= gameSpeed;
+
+                if (!col.collected && 
+                    player.x < col.x + col.width &&
+                    player.x + player.width > col.x &&
+                    player.y < col.y + col.height &&
+                    player.y + player.height > col.y) {
+                    
+                    // Collected!
+                    col.collected = true;
+                    gameState.minigame.score += 20;
+                    gameScoreDisplay.innerText = gameState.minigame.score;
+                    polySynth.triggerAttackRelease("C6", "16n"); // Ding sound
+                }
+
+                if (col.x + col.width < 0) {
+                    collectibles.splice(i, 1);
+                }
+            }
+
+            // Increase difficulty
+            if (frameCount % 500 === 0) {
+                gameSpeed += 0.5;
+            }
+        }
+
+        function drawGame() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw gradient background
+            const bgGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            bgGrad.addColorStop(0, '#1e1b4b');
+            bgGrad.addColorStop(1, '#312e81');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw grid lines for speed effect
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.lineWidth = 2;
+            const offset = (frameCount * gameSpeed) % 40;
+            for(let i = -offset; i < canvas.width; i+= 40) {
+                ctx.beginPath();
+                ctx.moveTo(i, canvas.height);
+                ctx.lineTo(i + 100, 0);
+                ctx.stroke();
+            }
+
+            // Draw Floor
+            ctx.fillStyle = '#4338ca';
+            ctx.fillRect(0, canvas.height - 5, canvas.width, 5);
+
+            // Draw Player
+            ctx.fillStyle = player.color;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = player.color;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            ctx.shadowBlur = 0; // reset
+
+            // Draw Obstacles
+            obstacles.forEach(obs => {
+                ctx.fillStyle = obs.color;
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+                
+                // Highlight
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.fillRect(obs.x, obs.y, obs.width, 5);
+            });
+
+            // Draw Collectibles (Notes)
+            collectibles.forEach(col => {
+                if (!col.collected) {
+                    ctx.fillStyle = col.color;
+                    // Draw a simple note shape (circle + stem)
+                    ctx.beginPath();
+                    ctx.arc(col.x + 10, col.y + 15, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillRect(col.x + 14, col.y, 2, 15);
+                    
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = col.color;
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+            });
+        }
+
+        function jump() {
+            if (gameState.currentScreen === 'minigame' && gameState.minigame.isPlaying) {
+                if (!player.isJumping) {
+                    player.velocityY = player.jumpPower;
+                    player.isJumping = true;
+                    // Jump sound
+                    snare.triggerAttackRelease("16n");
+                }
+            }
+        }
+
+        // --- Event Listeners ---
+        btnStart.addEventListener('click', () => {
+            generateQuiz();
+            switchScreen('quiz');
+        });
+
+        playSoundBtn.addEventListener('click', toggleSound);
+        
+        btnPlayMinigame.addEventListener('click', startMinigame);
+
+        // Minigame controls (Keyboard & Touch/Mouse)
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.code === 'ArrowUp') {
+                if(gameState.currentScreen === 'minigame' && !gameState.minigame.isPlaying && !btnPlayMinigame.disabled && gameOverlay.style.display !== 'none') {
+                    // Prevent immediate jump on start
+                    setTimeout(startMinigame, 100); 
+                } else {
+                    jump();
+                }
+                e.preventDefault();
+            }
+        });
+
+        canvas.addEventListener('mousedown', jump);
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Prevent scrolling
+            jump();
+        }, {passive: false});
+
+        window.addEventListener('resize', resizeCanvas);
+
+        // --- Initialize ---
+        resizeCanvas();
+        checkMinigamePlayability();
+
+    </script>
+</body>
+</html>
